@@ -53,7 +53,7 @@ class Category(Base):
     products: Mapped[list[Product]] = relationship(back_populates='category', cascade='all, delete-orphan')
 
     def __repr__(self):
-        return f"Category(name={self.name}, description={self.description})"
+        return f"<Category(name={self.name}, description={self.description})>"
 
 with engine.begin() as conn:
     Base.metadata.create_all(conn)
