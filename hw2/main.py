@@ -49,6 +49,7 @@ class User(BaseModel):
         try:
             json_deserialized = cls.model_validate_json(json_string, strict=True)
             return json_deserialized.model_dump_json()
+            # return json_string
         except ValidationError as e:
             return e.json()
 
