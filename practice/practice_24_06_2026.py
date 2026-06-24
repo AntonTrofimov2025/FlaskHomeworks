@@ -1,3 +1,5 @@
+# pylint: disable=line-too-long
+
 # Создайте модель Event, которая включает поля:
 # ● title (строка),
 # ● date (дата и время события),
@@ -87,7 +89,7 @@ class Appointment(BaseModel):
 
 def test_appointment_date_validation():
     with pytest.raises(ValueError, match='You have to wait! :D'):
-        Appointment(appointment_date=datetime.now() + timedelta(hours=24), patient_name='johny')
+        Appointment(appointment_date=datetime.now() + timedelta(hours=23), patient_name='johny')
 
 # Создайте экземпляр движка для подключения к MySQL базе данных.
 
@@ -137,7 +139,7 @@ class User(Base):
     age: Mapped[int]
 
     posts: Mapped[list['Post']] = relationship(back_populates='user', cascade='all, delete-orphan')
-    addresses: Mapped[list['Address']] = relationship(back_populates='user_2', cascade='all, delete-orphan')
+    addresses: Mapped[list['Address']] = relationship(back_populates='user', cascade='all, delete-orphan')
 
 def test_our_class():
     Base.metadata.create_all(engine)
@@ -181,7 +183,7 @@ class Address(Base):
     house_number: Mapped[int]
     user_id: Mapped[int] = mapped_column(ForeignKey(User.id, ondelete='CASCADE'))
 
-    user_2: Mapped[User] = relationship(back_populates='addresses')
+    user: Mapped[User] = relationship(back_populates='addresses')
 
 @pytest.mark.parametrize('addresses', [[Address(city='SPB', street='Nevskiy avenue', house_number=27),
                                         Address(city='SPB', street='Liteiniy avenue', house_number=13)],
@@ -191,7 +193,7 @@ def test_user_with_address(addresses):
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         user_address_1 = User(username='Tony',age=27, posts=[Post(message="Hello, world!"),
-                                                             Post(message='My Name is Mary')],
+                                                             Post(message='My Name is Tony')],
                               addresses=addresses)
         session.add(user_address_1)
         session.commit()
