@@ -95,7 +95,7 @@ def test_appointment_date_validation():
 
 import  os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker, Session
 
 from dotenv import load_dotenv
@@ -139,7 +139,10 @@ class User(Base):
     age: Mapped[int]
 
     posts: Mapped[list['Post']] = relationship(back_populates='user', cascade='all, delete-orphan')
-    addresses: Mapped[list['Address']] = relationship(back_populates='user', cascade='all, delete-orphan')
+    addresses: Mapped[list['Address']] = relationship(back_populates='user', cascade='all, delete-orphan', lazy='joined')
+
+    def __repr__(self):
+        return f"<User(id={self.id}, username={self.username}, age={self.age})>"
 
 def test_our_class():
     Base.metadata.create_all(engine)
@@ -185,6 +188,9 @@ class Address(Base):
 
     user: Mapped[User] = relationship(back_populates='addresses')
 
+    def __repr__(self):
+        return f"<Address(id={self.id}, city={self.city}, street={self.street}, house_number={self.house_number}, user_id={self.user_id})>"
+
 @pytest.mark.parametrize('addresses', [[Address(city='SPB', street='Nevskiy avenue', house_number=27),
                                         Address(city='SPB', street='Liteiniy avenue', house_number=13)],
                                    [Address(city='Berlin', street='Alexander Platz', house_number=45),
@@ -217,3 +223,129 @@ def test_delete_user():
         assert session.get(User, user_id) is None
         assert session.get(Address, user_address_id) is None
 
+# Напишите запрос, который возвращает пользователя с конкретным именем (например, "Alice").
+
+@pytest.fixture
+def session():
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        bob = User(username='Bob',age=19, addresses=[Address(city='Berlin', street='Alexander Platz', house_number=45)])
+        tony = User(username='Tony',age=27, addresses=[Address(city='Berlin', street='Alexander Platz', house_number=45)])
+        alice = User(username='Alice',age=27, addresses=[Address(city='Berlin', street='Alexander Platz', house_number=45)])
+        charlie = User(username='Charlie',age=45, addresses=[Address(city='Berlin', street='Alexander Platz', house_number=45)])
+        session.add_all([alice, bob, tony, charlie])
+        session.commit()
+        yield session
+    Base.metadata.drop_all(engine)
+
+def test_get_alice(session):
+    query = select(User).where(User.username == 'Alice')
+    res = session.scalars(query).unique()
+    for user in res:
+        assert user.username == 'Alice'
+
+def test_older_20(session):
+    query = select(User).where(User.age > 20)
+    res = session.execute(query).unique().all()
+    # print(res)
+    assert len(res) == 3
+
+def test_update_bob(session):
+    user = session.get(User, 2)
+    assert user.username == 'Bob'
+    user.age = 25
+    session.flush()
+    check = session.get(User, 2)
+    assert check.age == 25
+    session.commit()
+
+def test_younger_30(session):
+    query = select(User).where(User.age < 30)
+    res = session.execute(query).unique().all()
+    # print(res)
+    assert len(res) == 3
+
+def test_delete_charlie(session):
+    query = select(User).where(User.username == 'Charlie')
+    assert (user := session.scalar(query))
+    session.delete(user)
+    assert session.execute(select(func.count(User.id))).scalar() == 3
+
+def test_sort_age(session):
+    query = select(User.age).order_by(User.age.desc())
+    users = session.execute(query).scalars().all()
+    print(users)
+    assert users == sorted(users, reverse=True)
+
+def test_names_sort(session):
+    query = select(User.username).order_by(User.username.asc())
+    users = session.execute(query).scalars().all()
+    print(users)
+    assert users == sorted(users, reverse=False)
+
+def test_whether_charlie(session):
+    assert session.scalar(select(User).where(User.username == 'Charlie'))
+
+def test_avg_users(session):
+    avg_age = session.execute(select(func.avg(User.age))).scalar()
+    # print(avg_age)
+    list_users = session.execute(select(User.age)).scalars().all()
+    assert avg_age == round(sum(list_users) / len(list_users), 1)
+
+def test_max_min_users(session):
+    max_age, min_age = session.execute(select(func.max(User.age), func.min(User.age))).all()[0]
+    assert max_age > min_age
+
+def test_group_users(session):
+    query = select(User.age, func.count(User.age)).group_by(User.age)
+    assert len(session.execute(query).all()) == 3
+
+def test_having_users(session):
+    query = select(User.age, func.count(User.age)).group_by(User.age).having(func.count(User.age) > 1)
+    assert len(session.execute(query).all()) == 1
+
+def test_subqueries(session):
+    subquery = select(func.avg(User.age).label('avg_age')).subquery()
+    query = select(User).where(User.age > subquery.c.avg_age)
+    assert session.execute(query).unique().scalar().age > 29.5
+
+
+def test_all_users(session):
+    # all_users = session.execute(select(User)).unique().scalars().all()
+    all_users = session.execute(select(User, Address).join(Address, User.id == Address.user_id)).unique().all()
+    print(all_users)
+    for user, _ in all_users:
+        for address in user.addresses:
+            assert address.user_id == user.id
+
+def test_users_no_address(session):
+    session.add(User(username='Jeff',age=14))
+    session.commit()
+    homeless_users = session.execute(select(User).join(Address, isouter=True).where(Address.id.is_(None))).scalar()
+    assert homeless_users.username == 'Jeff' and homeless_users.age == 14
+    session.delete(homeless_users)
+    session.commit()
+
+def test_city_count(session):
+    city_count = session.execute(select(Address.city, func.count(User.id)
+                                        ).join(User, User.id == Address.user_id
+                                        ).group_by(Address.city)).all()[0]
+    city, count = city_count
+    print(city_count)
+    assert city == 'Berlin' and count == 4
+
+def test_users_berlin(session):
+    all_users = session.execute(select(User).join(Address, User.id == Address.user_id
+                                                  ).where(Address.city == 'Berlin')).unique().scalars().all()
+    print(all_users)
+    for user in all_users:
+        for address in user.addresses:
+            assert address.city == 'Berlin'
+
+def test_bob_address(session):
+    bob_found = session.execute(select(User).where(User.username == 'Bob')).scalar()
+    bob_found.addresses[0].city = 'Paris'
+    session.commit()
+    session.expire_all()
+    bob_updated = session.get(User, bob_found.id)
+    assert bob_updated.addresses[0].city == 'Paris'
