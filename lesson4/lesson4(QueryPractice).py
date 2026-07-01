@@ -45,7 +45,7 @@ class Order(Base, TimestampMixin):
     def __repr__(self):
         return f'<Order(id={self.id}, amount={self.amount}, user_id={self.user_id})>'
 
-engine = create_engine('sqlite:///users_orders')
+engine = create_engine('sqlite:///users_orders.db')
 
 with engine.begin() as conn:
     Base.metadata.create_all(conn)
